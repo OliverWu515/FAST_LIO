@@ -1,7 +1,128 @@
 
-\section{Estimation Algorithms}
-\subsection{Unscented Kalman Filter (UKF)}
-The UKF approximates the posterior distribution using sigma points. Key steps include:
+\section{Iterated Extended Kalman Filter(EKF)}
+\label{sec:iekf}
+\subsection{Residual computation}
+\label{subsec:residual_computation}
+
+With the motion compensation in \eqref{eq:backward_propagation}, we can view the scan of feature points $\{{}^{L_k}\mathbf{p}_{f_j}\}$, all sampled at the same time $t_k$, and use it to construct the residual. Assume the current iteration of the iterated Kalman filter is $\kappa$, and the corresponding state estimate is $\hat{\mathbf{x}}_k^\kappa$. When $\kappa = 0$, $\hat{\mathbf{x}}_k^\kappa = \hat{\mathbf{x}}_k$, the predicted state from the propagation in \eqref{eq:forward_propagation}. Then, the feature points $\{{}^{L_k}\mathbf{p}_{f_j}\}$ can be transformed to the global frame as follows:
+
+\begin{equation}
+    {}^G\hat{\mathbf{p}}_{f_j}^\kappa = {}^G\hat{\mathbf{T}}_{I_k}^{\kappa} {}^I\mathbf{T}_L {}^{L_k}\mathbf{p}_{f_j}; \quad j = 1, \cdots, m.
+    \label{eq:global_projection}
+\end{equation}
+
+For each LiDAR feature point, the closest plane or edge defined by its nearby feature points in the map is assumed to be where the point truly belongs to. The residual is defined as the distance between the feature point's estimated global frame coordinate ${}^G\hat{\mathbf{p}}_{f_j}^\kappa$ and the nearest plane (or edge) in the map. Denoting $\mathbf{u}_j$ the normal vector (or edge orientation) of the corresponding plane (or edge), on which lying a point ${}^G\mathbf{q}_j$, then the residual $\mathbf{z}_j^\kappa$ is computed as:
+
+\begin{equation}
+    \mathbf{z}_j^\kappa = \mathbf{G}_j \left( {}^G\hat{\mathbf{p}}_{f_j}^\kappa - {}^G\mathbf{q}_j \right)
+    \label{eq:residual}
+\end{equation}
+
+where $\mathbf{G}_j = \mathbf{u}_j^T$ for planar features and $\mathbf{G}_j = [\mathbf{u}_j]_\times$ for edge features. The computation of the $\mathbf{u}_j$ and the search of nearby points in the map, which define the corresponding plane or edge, is achieved by building a KD-tree of the points in the most recent map 
+% \cite{bentley1975multidimensional}. 
+
+\subsection{Iterated State Update}
+\label{subsec:iterated_update}
+
+To fuse the residual $\mathbf{z}_j^\kappa$ computed in \eqref{eq:residual} with the state prediction $\hat{\mathbf{x}}_k$ and covariance $\hat{\mathbf{P}}_k$ propagated from the IMU data, we need to linearize the measurement model that relates the residual $\mathbf{z}_j^\kappa$ to the ground-truth state $\mathbf{x}_k$ and measurement noise. The measurement noise originates from the LiDAR ranging and beam-directing noise ${}^{L_j}\mathbf{n}_{f_j}$ when measuring the point ${}^{L_j}\mathbf{p}_{f_j}$. Removing this noise from the point measurement ${}^{L_j}\mathbf{p}_{f_j}$ leads to the true point location:
+
+\begin{equation}
+    {}^{L_j}\mathbf{p}_{f_j}^{\text{gt}} = {}^{L_j}\mathbf{p}_{f_j} - {}^{L_j}\mathbf{n}_{f_j}.
+    \label{eq:true_point}
+\end{equation}
+
+This true point, after projecting to the frame $L_k$ via \eqref{eq:backward_propagation} and then to the global frame with the ground-truth state $\mathbf{x}_k$ (i.e., pose), should lie exactly on the plane (or edge) in the map. That is, plugging \eqref{eq:true_point} into \eqref{eq:backward_propagation}, then into \eqref{eq:global_projection}, and further into \eqref{eq:residual} should result in zero, i.e.,
+
+\begin{equation}
+    \mathbf{0} = \mathbf{h}_j(\mathbf{x}_k, {}^{L_j}\mathbf{n}_{f_j}) = \mathbf{G}_j \left( {}^G\mathbf{T}_{I_k}^\kappa {}^I\mathbf{T}_L {}^{L_k}\mathbf{T}_{L_j} ({}^{L_j}\mathbf{p}_{f_j} - {}^{L_j}\mathbf{n}_{f_j}) - {}^G\mathbf{q}_j \right).
+    \label{eq:zero_residual}
+\end{equation}
+
+Now,we find out the relation between the state $\hat{\mathbf{x}}_k^\kappa$ and the residual $\mathbf{z}_j^\kappa$.
+Note that the $\mathbf{h}_j$ is nonlinear with respect to the state $\mathbf{x}_k$,then we can approximate the above equation by its first-order Taylor expansion made at $\hat{\mathbf{x}}_k^\kappa$ :
+
+\begin{align}
+    \mathbf{0} &= \mathbf{h}_j \left( \mathbf{x}_k, {}^{L_j}\mathbf{n}_{f_j} \right) \simeq \mathbf{h}_j \left( \hat{\mathbf{x}}_k^\kappa, \mathbf{0} \right) + \mathbf{H}_j^\kappa \tilde{\mathbf{x}}_k^\kappa + \mathbf{v}_j \nonumber \\
+    &= \mathbf{z}_j^\kappa + \mathbf{H}_j^\kappa \tilde{\mathbf{x}}_k^\kappa + \mathbf{v}_j,
+    \label{eq:linearized_measurement}
+\end{align}
+
+where $\tilde{\mathbf{x}}_k^\kappa = \mathbf{x}_k \boxminus \hat{\mathbf{x}}_k^\kappa$ is the error state, $\mathbf{H}_j^\kappa$ is the Jacobian matrix of $\mathbf{h}_j(\hat{\mathbf{x}}_k^\kappa \boxplus \tilde{\mathbf{x}}_k^\kappa, {}^{L_j}\mathbf{n}_{f_j})$ with respect to $\tilde{\mathbf{x}}_k^\kappa$, evaluated at zero, and $\mathbf{v}_j \sim \mathcal{N}(\mathbf{0}, \mathbf{R}_j)$ comes from the raw measurement noise ${}^{L_j}\mathbf{n}_{f_j}$.
+
+Notice that the prior distribution of $\mathbf{x}_k$ obtained from the forward propagation in Section~\ref{subsec:forward_propagation} is for:
+\begin{equation}
+    \mathbf{x}_k \boxminus \hat{\mathbf{x}}_k = (\tilde{\mathbf{x}}_k^\kappa \boxplus \hat{\mathbf{x}}_k^\kappa) \boxminus \hat{\mathbf{x}}_k = \tilde{\mathbf{x}}_k^\kappa \boxplus (\hat{\mathbf{x}}_k^\kappa \boxminus \hat{\mathbf{x}}_k) = \tilde{\mathbf{x}}_k^\kappa + \mathbf{J}^\kappa \tilde{\mathbf{x}}_k^\kappa,
+    \label{eq:prior_error}
+\end{equation}
+where $\mathbf{J}^\kappa$ is the partial differentiation of $(\hat{\mathbf{x}}_k^\kappa \boxplus \tilde{\mathbf{x}}_k^\kappa) \boxminus \hat{\mathbf{x}}_k$ with respect to $\tilde{\mathbf{x}}_k^\kappa$ evaluated at zero:
+\begin{equation}
+    \mathbf{J}^\kappa = 
+    \begin{bmatrix}
+        \mathbf{A}\left( {}^G\hat{\mathbf{R}}_{I_k}^\kappa \boxminus {}^G\hat{\mathbf{R}}_{I_k} \right)^{-T} & \mathbf{0}_{3\times15} \\
+        \mathbf{0}_{15\times3} & \mathbf{I}_{15\times15}
+    \end{bmatrix},
+    \label{eq:jacobian_J}
+\end{equation}
+and $\mathbf{A}(\cdot)^{-1}$ is defined in \eqref{eq:attitude_matrix_inverse}. For the first iteration (i.e., the case of extended Kalman filter), $\hat{\mathbf{x}}_k^\kappa = \hat{\mathbf{x}}_k$, then $\mathbf{J}^\kappa = \mathbf{I}$.
+
+Combining the prior in \eqref{eq:prior_error} with the posteriori distribution from \eqref{eq:linearized_measurement} yields the maximum a-posteriori estimate (MAP):
+\begin{equation}
+    \min_{\tilde{\mathbf{x}}_k^\kappa} \left( \| \mathbf{x}_k \boxminus \hat{\mathbf{x}}_k \|_{\hat{\mathbf{P}}_k^{-1}}^2 + \sum_{j=1}^{m} \| \mathbf{z}_j^\kappa + \mathbf{H}_j^\kappa \tilde{\mathbf{x}}_k^\kappa \|_{\mathbf{R}_j^{-1}}^2 \right),
+    \label{eq:map_estimation}
+\end{equation}
+where $\| \mathbf{x} \|_{\mathbf{M}}^2 = \mathbf{x}^T \mathbf{M} \mathbf{x}$. Substituting the linearization of the prior in \eqref{eq:prior_error} into \eqref{eq:map_estimation} and optimizing the resultant quadratic cost leads to the standard iterated Kalman filter \cite{thrun2005probabilistic}, which can be computed as follows (to simplify the notation, let $\mathbf{H} = [\mathbf{H}_1^{\kappa T}, \cdots, \mathbf{H}_m^{\kappa T}]^T$, $\mathbf{R} = \mathrm{diag}(\mathbf{R}_1, \cdots, \mathbf{R}_m)$, $\mathbf{P} = (\mathbf{J}^\kappa)^{-1} \hat{\mathbf{P}}_k (\mathbf{J}^\kappa)^{-T}$, and $\mathbf{z}_k^\kappa = [ {\mathbf{z}_1^{\kappa T}}, \cdots, {\mathbf{z}_m^{\kappa T}} ]^T$):
+
+\begin{equation}
+    \mathbf{K} = \mathbf{P} \mathbf{H}^T (\mathbf{H} \mathbf{P} \mathbf{H}^T + \mathbf{R})^{-1},
+    \label{eq:kalman_gain_standard}
+\end{equation}
+\begin{equation}
+    \hat{\mathbf{x}}_k^{\kappa+1} = \hat{\mathbf{x}}_k^\kappa \boxplus \left( -\mathbf{K} \mathbf{z}_k^\kappa - (\mathbf{I} - \mathbf{K} \mathbf{H}) (\mathbf{J}^\kappa)^{-1} (\hat{\mathbf{x}}_k^\kappa \boxminus \hat{\mathbf{x}}_k) \right).
+    \label{eq:state_update}
+\end{equation}
+
+The updated estimate $\hat{\mathbf{x}}_k^{\kappa+1}$ is then used to compute the residual in Section~\ref{subsec:residual_computation} and repeat the process until convergence (i.e., $\| \hat{\mathbf{x}}_k^{\kappa+1} \boxminus \hat{\mathbf{x}}_k^\kappa \| < \epsilon$). After convergence, the optimal state estimation and covariance is:
+\begin{equation}
+    \bar{\mathbf{x}}_k = \hat{\mathbf{x}}_k^{\kappa+1}, \quad \bar{\mathbf{P}}_k = (\mathbf{I} - \mathbf{K} \mathbf{H}) \mathbf{P}.
+    \label{eq:final_estimate}
+\end{equation}
+
+\subsection{Kalman gain computation}
+A problem with the commonly used Kalman gain form is that it requires to invert the matrix $HPHT+R$ which is in the dimension of the measurements. In practice, the number of LiDAR feature points are very large in number, inverting a matrix of this size is prohibitive.
+
+In fact, if directly solving (17), we can obtain the same solution in (18) but with a new form of Kalman gain shown below:
+
+\begin{equation}
+    \mathbf{K} = \left( \mathbf{H}^T \mathbf{R}^{-1} \mathbf{H} + \mathbf{P}^{-1} \right)^{-1} \mathbf{H}^T \mathbf{R}^{-1}.
+    \label{eq:new_kalman_gain}
+\end{equation}
+
+The two forms of Kalman gains are indeed equivalent:
+
+Based on the matrix inverse lemma \cite{woodbury1950inverting}, we can get:
+\begin{equation}
+    (\mathbf{P}^{-1} + \mathbf{H}^T \mathbf{R}^{-1} \mathbf{H})^{-1} = \mathbf{P} - \mathbf{P} \mathbf{H}^T (\mathbf{H} \mathbf{P} \mathbf{H}^T + \mathbf{R})^{-1} \mathbf{H} \mathbf{P}.
+    \label{eq:matrix_inverse_lemma}
+\end{equation}
+
+Substituting the above into \eqref{eq:new_kalman_gain}, we can get:
+\begin{align}
+    \mathbf{K} &= (\mathbf{H}^T \mathbf{R}^{-1} \mathbf{H} + \mathbf{P}^{-1})^{-1} \mathbf{H}^T \mathbf{R}^{-1} \nonumber \\
+               &= \mathbf{P} \mathbf{H}^T \mathbf{R}^{-1} - \mathbf{P} \mathbf{H}^T (\mathbf{H} \mathbf{P} \mathbf{H}^T + \mathbf{R})^{-1} \mathbf{H} \mathbf{P} \mathbf{H}^T \mathbf{R}^{-1}.
+    \label{eq:kalman_gain_intermediate}
+\end{align}
+
+Now note that $\mathbf{H} \mathbf{P} \mathbf{H}^T \mathbf{R}^{-1} = (\mathbf{H} \mathbf{P} \mathbf{H}^T + \mathbf{R}) \mathbf{R}^{-1} - \mathbf{I}$. Substituting it into the above, we can get the standard Kalman gain formula in \eqref{eq:kalman_gain_standard}, as shown below:
+\begin{align}
+    \mathbf{K} &= \mathbf{P} \mathbf{H}^T \mathbf{R}^{-1} - \mathbf{P} \mathbf{H}^T \mathbf{R}^{-1} + \mathbf{P} \mathbf{H}^T (\mathbf{H} \mathbf{P} \mathbf{H}^T + \mathbf{R})^{-1} \nonumber \\
+               &= \mathbf{P} \mathbf{H}^T (\mathbf{H} \mathbf{P} \mathbf{H}^T + \mathbf{R})^{-1}.
+    \label{eq:standard_kalman_gain}
+\end{align}
+
+Since the LiDAR measurements are independent, the covariance matrix $\mathbf{R}$ is (block) diagonal and hence the new formula only requires to invert two matrices both in the dimension of state instead of measurements. The new formula greatly saves the computation as the state dimension is usually much lower than measurements in LIO (e.g., more than 1,000 effective feature points in a scan for 10 Hz scan rate while the state dimension is only 18).
+
+This formulation reduces the computational complexity from $\mathcal{O}(m^3)$ to $\mathcal{O}(n^3)$, where $m$ is the number of measurements (feature points) and $n$ is the state dimension ($n=18$ in our case). This efficiency is critical for real-time operation on resource-constrained platforms.This coild be proved in experimental section.
+
 \begin{algorithm}[H]
 \caption{UKF Prediction and Update}
 \begin{algorithmic}[1]
@@ -13,6 +134,3 @@ The UKF approximates the posterior distribution using sigma points. Key steps in
 \State Update state using Kalman gain $\mathbf{K}_{k+1}$
 \end{algorithmic}
 \end{algorithm}
-
-\subsection{Extended Kalman Filter (EKF)}
-For comparison, we implement the EKF using Jacobian linearization of $f(\cdot)$ and $h(\cdot)$.
