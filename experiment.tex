@@ -4,17 +4,23 @@ We successfully reproduced the FAST-LIO algorithm and conducted a comprehensive 
 To ensure reproducibility and isolation, all experiments were executed in a Docker environment running Ubuntu 20.04.
 
 We mainly compared the performance by RMSE (Root Mean Square Error) and 
-the run time whether with the Kalman gain in\ref{eq:new_kalman_gain} or the efficient form in\ref{eq:kalman_gain_standard}.
+the run time whether with the Kalman gain in\eqref{eq:new_kalman_gain} or the efficient form in\eqref{eq:kalman_gain_standard}.
 
 \section{Results and Analysis}
 \label{sec:results}
 效果展示
 
-误差分析
+\subsection{RMSE Comparison}
 
-运行时间分析
+\subsection{Processing Time Comparison}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.6\textwidth]{media/time_analize.png}
+    \caption{Processing Time Comparison between Old and New Formulas}
+    \label{fig:time_comparison}
+\end{figure}
 
-\begin{table}[htbp]
+\begin{table}[h]
     \centering
     \begin{tabular}{cccccc}
     \toprule
@@ -29,7 +35,6 @@ the run time whether with the Kalman gain in\ref{eq:new_kalman_gain} or the effi
     \label{tab:time_comparison}
 \end{table}
 
-% TODO: figure
 As shown in the figure, in both datasets, the absence of
 the Woodbury identity significantly reduced FAST-
 LIO’s processing speed. While the old formula failed

@@ -17,6 +17,13 @@ where $\delta\boldsymbol{\theta} = \mathrm{Log}({}^G\bar{\mathbf{R}}_I^T {}^G\ma
 Intuitively, the attitude error $\delta\boldsymbol{\theta}$ describes the (small) deviation between the true and the estimated attitude. The main advantage of this error definition is that it allows us to represent the attitude uncertainty by the $3\times3$ covariance matrix $\mathbb{E}\left\{ \delta\boldsymbol{\theta} \delta\boldsymbol{\theta}^T \right\}$. Since the attitude has 3 degree of freedom (DOF), this is a minimal representation.
 
 \subsection{Forward Propagation}
+\label{subsec:forward_propagation}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.6\textwidth]{media/forward_backword.png}
+    \caption{The forward and backward propagation.}
+    \label{fig:forward_propagation}
+\end{figure}
 The forward propagation is performed once receiving an IMU input. More specifically, the state is propagated following \eqref{eq:discrete_state} by setting the process noise $\mathbf{w}_i$ to zero:
 \begin{equation}
     \hat{\mathbf{x}}_{i+1} = \hat{\mathbf{x}}_i \boxplus (\Delta t \mathbf{f}(\hat{\mathbf{x}}_i, \mathbf{u}_i, \mathbf{0})); \quad \hat{\mathbf{x}}_0 = \bar{\mathbf{x}}_{k-1}.
@@ -56,7 +63,7 @@ The matrix $\mathbf{F}_{\tilde{\mathbf{x}}}$ and $\mathbf{F}_{\mathbf{w}}$ in \e
     \label{eq:linearized_matrices}
     \end{split}
 \end{equation}
-The result is shown in \eqref{eq:linearized_matrices}, where $\tilde{\boldsymbol{\omega}}_i = \boldsymbol{\omega}_{m_i} - \hat{\mathbf{b}}_{\omega_i}$, $\tilde{\mathbf{a}}_i = \mathbf{a}_{m_i} - \hat{\mathbf{b}}_{a_i}$, and $\mathbf{A}(\mathbf{u})^{-1}$ follows the same definition in \cite{forster2016manifold} as below:
+The result is shown in \eqref{eq:linearized_matrices}, where $\tilde{\boldsymbol{\omega}}_i = \boldsymbol{\omega}_{m_i} - \hat{\mathbf{b}}_{\omega_i}$, $\tilde{\mathbf{a}}_i = \mathbf{a}_{m_i} - \hat{\mathbf{b}}_{a_i}$, and $\mathbf{A}(\mathbf{u})^{-1}$ follows the same definition in \cite{Bullo_Murray_1995} as below:
 \begin{equation}
     \begin{split}
         \mathbf{A}(\mathbf{u})^{-1} = \mathbf{I} - \frac{1}{2} [\mathbf{u}]_\wedge + \left(1 - \alpha(\|\mathbf{u}\|)\right) \frac{\mathbf{u}\mathbf{u}^\top}{\|\mathbf{u}\|^2},\\
@@ -75,10 +82,11 @@ The propagation continues until reaching the end time of a new scan at $t_k$ whe
 
 \subsection{Backward Propagation and Motion Compensation}
 \label{subsec:backward_propagation}
-% TODO:FIGURE and REF
-When the points accumulation time interval is reached at time $t_k$, the new scan of feature points should be fused with the propagated state $\hat{\mathbf{x}}_k$ and covariance $\hat{\mathbf{P}}_k$ to produce an optimal state update. However, although the new scan is at time $t_k$, the feature points are measured at their respective sampling time $\rho_j \leq t_k$ (see Section~\ref{subsec:lidar_preprocessing} and Fig.~\ref{fig:system_overview}(b)), causing a mismatch in the body frame of reference.
+When the points accumulation time interval is reached at time $t_k$, the new scan of feature points should be fused with the propagated state $\hat{\mathbf{x}}_k$ and covariance $\hat{\mathbf{P}}_k$ to produce an optimal state update. However, although the new scan is at time $t_k$, the feature points are measured at their respective sampling time $\rho_j \leq t_k$ 
+(see Fig.~\ref{fig:forward_propagation})
+, causing a mismatch in the body frame of reference.
 
-To compensate for the relative motion (i.e., motion distortion) between time $\rho_j$ and time $t_k$, we propagate \eqref{eq:state_eq} backward as:
+To compensate for the relative motion (i.e., motion distortion) between time $\rho_j$ and time $t_k$, we propagate \eqref{eq:discrete_state} backward as:
 \[
     \tilde{\mathbf{x}}_{j-1} = \tilde{\mathbf{x}}_j \boxplus (-\Delta t \mathbf{f}(\tilde{\mathbf{x}}_j, \mathbf{u}_j, \mathbf{0})),
 \]
@@ -95,7 +103,8 @@ starting from zero pose and rests states (e.g., velocity and bias) from $\hat{\m
 
 where $\rho_{j-1} \in [\tau_{i-1}, \tau_i)$, $\Delta t = \rho_j - \rho_{j-1}$, and s.f. means “starting from”.
 
-The backward propagation will produce a relative pose between time $\rho_j$ and the scan-end time $t_k$: ${}^{I_k}\check{\mathbf{T}}_{I_j} = \begin{bmatrix} {}^{I_k}\check{\mathbf{R}}_{I_j} & {}^{I_k}\check{\mathbf{p}}_{I_j} \end{bmatrix}$. This relative pose enables us to project the local measurement ${}^{L_j}\mathbf{p}_{f_j}$ to scan-end measurement ${}^{L_k}\mathbf{p}_{f_j}$ as follows (see Fig.~\ref{fig:system_overview}):
+The backward propagation will produce a relative pose between time $\rho_j$ and the scan-end time $t_k$: ${}^{I_k}\check{\mathbf{T}}_{I_j} = \begin{bmatrix} {}^{I_k}\check{\mathbf{R}}_{I_j} & {}^{I_k}\check{\mathbf{p}}_{I_j} \end{bmatrix}$. This relative pose enables us to project the local measurement ${}^{L_j}\mathbf{p}_{f_j}$ to scan-end measurement ${}^{L_k}\mathbf{p}_{f_j}$ as follows 
+(see Fig.~\ref{fig:forward_propagation}):
 
 \begin{equation}
     {}^{L_k}\mathbf{p}_{f_j} = {}^{I}\mathbf{T}_L^{-1} {}^{I_k}\check{\mathbf{T}}_{I_j} {}^{I}\mathbf{T}_L {}^{L_j}\mathbf{p}_{f_j}.
@@ -107,7 +116,7 @@ where ${}^{I}\mathbf{T}_L$ is the known extrinsic (see Section~\ref{subsec:syste
 \subsection{Residual computation}
 \label{subsec:residual_computation}
 
-With the motion compensation in \eqref{eq:backward_propagation}, we can view the scan of feature points $\{{}^{L_k}\mathbf{p}_{f_j}\}$, all sampled at the same time $t_k$, and use it to construct the residual. Assume the current iteration of the iterated Kalman filter is $\kappa$, and the corresponding state estimate is $\hat{\mathbf{x}}_k^\kappa$. When $\kappa = 0$, $\hat{\mathbf{x}}_k^\kappa = \hat{\mathbf{x}}_k$, the predicted state from the propagation in \eqref{eq:forward_propagation}. Then, the feature points $\{{}^{L_k}\mathbf{p}_{f_j}\}$ can be transformed to the global frame as follows:
+With the motion compensation in \eqref{eq:scan_end_projection}, we can view the scan of feature points $\{{}^{L_k}\mathbf{p}_{f_j}\}$, all sampled at the same time $t_k$, and use it to construct the residual. Assume the current iteration of the iterated Kalman filter is $\kappa$, and the corresponding state estimate is $\hat{\mathbf{x}}_k^\kappa$. When $\kappa = 0$, $\hat{\mathbf{x}}_k^\kappa = \hat{\mathbf{x}}_k$, the predicted state from the propagation in \eqref{eq:forward_propagation}. Then, the feature points $\{{}^{L_k}\mathbf{p}_{f_j}\}$ can be transformed to the global frame as follows:
 
 \begin{equation}
     {}^G\hat{\mathbf{p}}_{f_j}^\kappa = {}^G\hat{\mathbf{T}}_{I_k}^{\kappa} {}^I\mathbf{T}_L {}^{L_k}\mathbf{p}_{f_j}; \quad j = 1, \cdots, m.
@@ -121,8 +130,7 @@ For each LiDAR feature point, the closest plane or edge defined by its nearby fe
     \label{eq:residual}
 \end{equation}
 
-where $\mathbf{G}_j = \mathbf{u}_j^T$ for planar features and $\mathbf{G}_j = [\mathbf{u}_j]_\times$ for edge features. The computation of the $\mathbf{u}_j$ and the search of nearby points in the map, which define the corresponding plane or edge, is achieved by building a KD-tree of the points in the most recent map 
-% \cite{bentley1975multidimensional}. 
+where $\mathbf{G}_j = \mathbf{u}_j^T$ for planar features and $\mathbf{G}_j = [\mathbf{u}_j]_\times$ for edge features. The computation of the $\mathbf{u}_j$ and the search of nearby points in the map, which define the corresponding plane or edge, is achieved by building a KD-tree of the points in the most recent map \cite{lin2020loam}. 
 
 \subsection{Iterated State Update}
 \label{subsec:iterated_update}
@@ -134,7 +142,7 @@ To fuse the residual $\mathbf{z}_j^\kappa$ computed in \eqref{eq:residual} with 
     \label{eq:true_point}
 \end{equation}
 
-This true point, after projecting to the frame $L_k$ via \eqref{eq:backward_propagation} and then to the global frame with the ground-truth state $\mathbf{x}_k$ (i.e., pose), should lie exactly on the plane (or edge) in the map. That is, plugging \eqref{eq:true_point} into \eqref{eq:backward_propagation}, then into \eqref{eq:global_projection}, and further into \eqref{eq:residual} should result in zero, i.e.,
+This true point, after projecting to the frame $L_k$ via \eqref{eq:scan_end_projection} and then to the global frame with the ground-truth state $\mathbf{x}_k$ (i.e., pose), should lie exactly on the plane (or edge) in the map. That is, plugging \eqref{eq:true_point} into \eqref{eq:scan_end_projection}, then into \eqref{eq:global_projection}, and further into \eqref{eq:residual} should result in zero, i.e.,
 
 \begin{equation}
     \mathbf{0} = \mathbf{h}_j(\mathbf{x}_k, {}^{L_j}\mathbf{n}_{f_j}) = \mathbf{G}_j \left( {}^G\mathbf{T}_{I_k}^\kappa {}^I\mathbf{T}_L {}^{L_k}\mathbf{T}_{L_j} ({}^{L_j}\mathbf{p}_{f_j} - {}^{L_j}\mathbf{n}_{f_j}) - {}^G\mathbf{q}_j \right).
@@ -202,7 +210,7 @@ In fact, if directly solving (17), we can obtain the same solution in (18) but w
 
 The two forms of Kalman gains are indeed equivalent:
 
-Based on the matrix inverse lemma \cite{woodbury1950inverting}, we can get:
+Based on the matrix inverse lemma \cite{woodbury}, we can get:
 \begin{equation}
     (\mathbf{P}^{-1} + \mathbf{H}^T \mathbf{R}^{-1} \mathbf{H})^{-1} = \mathbf{P} - \mathbf{P} \mathbf{H}^T (\mathbf{H} \mathbf{P} \mathbf{H}^T + \mathbf{R})^{-1} \mathbf{H} \mathbf{P}.
     \label{eq:matrix_inverse_lemma}
@@ -225,7 +233,7 @@ Now note that $\mathbf{H} \mathbf{P} \mathbf{H}^T \mathbf{R}^{-1} = (\mathbf{H} 
 Since the LiDAR measurements are independent, the covariance matrix $\mathbf{R}$ is (block) diagonal and hence the new formula only requires to invert two matrices both in the dimension of state instead of measurements. The new formula greatly saves the computation as the state dimension is usually much lower than measurements in LIO (e.g., more than 1,000 effective feature points in a scan for 10 Hz scan rate while the state dimension is only 18).
 
 This formulation reduces the computational complexity from $\mathcal{O}(m^3)$ to $\mathcal{O}(n^3)$, where $m$ is the number of measurements (feature points) and $n$ is the state dimension ($n=18$ in our case). This efficiency is critical for real-time operation on resource-constrained platforms.This could be proved in experimental section.The state estimation is summarized in Algorithm 1.
-
+\newpage
 \begin{algorithm}
     \caption{State Estimation}
     \label{alg:state_estimation}
@@ -233,9 +241,9 @@ This formulation reduces the computational complexity from $\mathcal{O}(m^3)$ to
     \hspace*{1.5em} IMU inputs $(\mathbf{a}_m, \boldsymbol{\omega}_m)$ in current scan; \\
     \hspace*{1.5em} LiDAR feature points ${}^{L_j}\mathbf{p}_{f_j}$ in current scan.
     
-    \begin{algorithmic}[1]
+    \begin{algorithmic}[htbp]
         \State Forward propagation to obtain state prediction $\hat{\mathbf{x}}_k$ via \eqref{eq:forward_propagation} and covariance prediction $\hat{\mathbf{P}}_k$ via \eqref{eq:covariance_propagation};
-        \State Backward propagation to obtain ${}^{L_k}\mathbf{p}_{f_j}$ via \eqref{eq:backward_propagation}, \eqref{eq:global_projection};
+        \State Backward propagation to obtain ${}^{L_k}\mathbf{p}_{f_j}$ via \eqref{eq:backward_propagation}, \eqref{eq:scan_end_projection};
         \State $\kappa = -1$, $\hat{\mathbf{x}}_k^{\kappa=0} = \hat{\mathbf{x}}_k$;
         \Repeat
             \State $\kappa = \kappa + 1$;
@@ -248,3 +256,4 @@ This formulation reduces the computational complexity from $\mathcal{O}(m^3)$ to
     
     \textbf{Output}: Current optimal estimation $\bar{\mathbf{x}}_k$ and $\bar{\mathbf{P}}_k$.
 \end{algorithm}
+\newpage
